@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Photoresistor Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111826;
+            --bg-tertiary: #1a2332;
+            --accent-primary: #00d9ff;
+            --accent-secondary: #0088ff;
+            --accent-glow: rgba(0, 217, 255, 0.2);
+            --text-primary: #e8eef5;
+            --text-secondary: #a0aec0;
+            --text-muted: #64748b;
+            --border: rgba(255, 255, 255, 0.08);
+            --success: #00ff88;
+            --warning: #ffaa00;
+            --danger: #ff3366;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .container {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            height: 100vh;
+            background: 
+                radial-gradient(ellipse at top right, rgba(0, 136, 255, 0.05), transparent 50%),
+                radial-gradient(ellipse at bottom left, rgba(0, 217, 255, 0.03), transparent 50%);
+        }
+
+        /* Header */
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 1.5rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 2rem;
+            flex-wrap: wrap;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .header-title h1 {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            position: relative;
+            transition: all 0.3s ease;
+        }
+
+        .status-indicator.connected {
+            background: var(--success);
+            box-shadow: 0 0 12px var(--success);
+        }
+
+        .status-indicator.connected::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid var(--success);
+            opacity: 0.3;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 0.3; }
+            50% { transform: scale(1.5); opacity: 0; }
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .control-group label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+        }
+
+        select, input, button {
+            font-family: 'DM Sans', sans-serif;
+            padding: 0.625rem 1rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        select:hover, input:hover {
+            border-color: var(--accent-primary);
+        }
+
+        select:focus, input:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: 500;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border: none;
+            color: var(--bg-primary);
+            padding: 0.625rem 1.5rem;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .disconnect-btn {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .disconnect-btn:hover {
+            background: var(--danger);
+            border-color: var(--danger);
+            color: white;
+        }
+
+        /* Main Content */
+        .main-content {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 0;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        .panel {
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow: auto;
+        }
+
+        .panel-left {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+        }
+
+        .panel-right {
+            background: var(--bg-primary);
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 0.875rem;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .panel-header .badge {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            padding: 0.25rem 0.625rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            flex: 1;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            overflow: hidden;
+        }
+
+        .chart-container::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: 
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.02) 0px, transparent 1px, transparent 20px),
+                repeating-linear-gradient(90deg, rgba(255,255,255,0.02) 0px, transparent 1px, transparent 20px);
+            pointer-events: none;
+        }
+
+        canvas {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Bacteria Estimate */
+        .bacteria-display {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .reading-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .reading-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+        }
+
+        .reading-label {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+        }
+
+        .reading-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 4rem;
+            font-weight: 600;
+            line-height: 1;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+            transition: all 0.3s ease;
+        }
+
+        .reading-unit {
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+        }
+
+        .bacteria-level {
+            margin-top: 1.5rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .level-indicator {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .level-label {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .level-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .level-bar {
+            height: 8px;
+            background: var(--bg-tertiary);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .level-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--success), var(--accent-primary));
+            border-radius: 4px;
+            transition: width 0.5s ease, background 0.3s ease;
+            position: relative;
+        }
+
+        .level-bar-fill.medium {
+            background: linear-gradient(90deg, var(--warning), var(--accent-primary));
+        }
+
+        .level-bar-fill.high {
+            background: linear-gradient(90deg, var(--danger), var(--warning));
+        }
+
+        .level-bar-fill::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0%, 100% { transform: translateX(-100%); }
+            50% { transform: translateX(100%); }
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .stat-value {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .connection-prompt {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: var(--text-muted);
+        }
+
+        .connection-prompt svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                grid-template-rows: 1fr 1fr;
+            }
+
+            .panel-left {
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+
+            .reading-value {
+                font-size: 3rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            header {
+                padding: 1rem;
+            }
+
+            .controls {
+                width: 100%;
+            }
+
+            .control-group {
+                flex: 1;
+                min-width: 120px;
+            }
+
+            .panel {
+                padding: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .reading-value {
+                font-size: 2.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-title">
+                <div class="status-indicator" id="statusIndicator"></div>
+                <h1>Photoresistor Monitor</h1>
+            </div>
+            <div class="controls">
+                <div class="control-group">
+                    <label>Serial Port</label>
+                    <select id="portSelect" disabled>
+                        <option>Select Port...</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Baud Rate</label>
+                    <input type="number" id="baudRate" value="9600" min="300" max="115200">
+                </div>
+                <button id="connectBtn">Connect</button>
+                <button id="disconnectBtn" class="disconnect-btn" style="display: none;">Disconnect</button>
+            </div>
+        </header>
+
+        <div class="main-content">
+            <div class="panel panel-left">
+                <div class="panel-header">
+                    <h2>Real-Time Data</h2>
+                    <span class="badge" id="sampleCount">0 samples</span>
+                </div>
+                <div class="chart-container">
+                    <canvas id="dataChart"></canvas>
+                </div>
+            </div>
+
+            <div class="panel panel-right">
+                <div class="panel-header">
+                    <h2>Analysis</h2>
+                </div>
+                <div class="bacteria-display" id="bacteriaDisplay">
+                    <div class="connection-prompt">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                        <p>Connect to Arduino to begin monitoring</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Web Serial API Setup
+        let port = null;
+        let reader = null;
+        let inputStream = null;
+        let outputStream = null;
+        let isReading = false;
+
+        // Chart Setup
+        const ctx = document.getElementById('dataChart').getContext('2d');
+        const maxDataPoints = 50;
+        let dataPoints = [];
+        let timeLabels = [];
+        let sampleCount = 0;
+
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: timeLabels,
+                datasets: [{
+                    label: 'Photoresistor Value',
+                    data: dataPoints,
+                    borderColor: '#00d9ff',
+                    backgroundColor: 'rgba(0, 217, 255, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    pointBackgroundColor: '#00d9ff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#00d9ff',
+                    pointHoverBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 300
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(17, 24, 38, 0.95)',
+                        titleColor: '#e8eef5',
+                        bodyColor: '#a0aec0',
+                        borderColor: 'rgba(255, 255, 255, 0.08)',
+                        borderWidth: 1,
+                        padding: 12,
+                        displayColors: false,
+                        callbacks: {
+                            label: function(context) {
+                                return 'Value: ' + context.parsed.y.toFixed(0);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        display: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#64748b',
+                            font: {
+                                family: 'IBM Plex Mono',
+                                size: 10
+                            }
+                        }
+                    },
+                    y: {
+                        display: true,
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.05)',
+                            drawBorder: false
+                        },
+                        ticks: {
+                            color: '#64748b',
+                            font: {
+                                family: 'IBM Plex Mono',
+                                size: 10
+                            }
+                        }
+                    }
+                },
+                interaction: {
+                    intersect: false,
+                    mode: 'index'
+                }
+            }
+        });
+
+        // UI Elements
+        const portSelect = document.getElementById('portSelect');
+        const baudRateInput = document.getElementById('baudRate');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const sampleCountDisplay = document.getElementById('sampleCount');
+        const bacteriaDisplay = document.getElementById('bacteriaDisplay');
+
+        // Check if Web Serial API is supported
+        if ('serial' in navigator) {
+            portSelect.disabled = false;
+            connectBtn.disabled = false;
+        } else {
+            alert('Web Serial API not supported. Please use Chrome, Edge, or Opera browser.');
+        }
+
+        // Request port access
+        connectBtn.addEventListener('click', async () => {
+            try {
+                // Request a port
+                port = await navigator.serial.requestPort();
+                
+                const baudRate = parseInt(baudRateInput.value);
+                await port.open({ baudRate });
+
+                // Update UI
+                statusIndicator.classList.add('connected');
+                connectBtn.style.display = 'none';
+                disconnectBtn.style.display = 'block';
+                portSelect.disabled = true;
+                baudRateInput.disabled = true;
+
+                // Update bacteria display
+                updateBacteriaDisplay();
+
+                // Start reading
+                readData();
+            } catch (error) {
+                console.error('Error connecting:', error);
+                alert('Failed to connect to Arduino: ' + error.message);
+            }
+        });
+
+        // Disconnect
+        disconnectBtn.addEventListener('click', async () => {
+            await disconnect();
+        });
+
+        async function disconnect() {
+            isReading = false;
+            
+            if (reader) {
+                await reader.cancel();
+                reader.releaseLock();
+            }
+
+            if (port) {
+                await port.close();
+                port = null;
+            }
+
+            // Update UI
+            statusIndicator.classList.remove('connected');
+            connectBtn.style.display = 'block';
+            disconnectBtn.style.display = 'none';
+            portSelect.disabled = false;
+            baudRateInput.disabled = false;
+
+            // Reset data
+            dataPoints = [];
+            timeLabels = [];
+            sampleCount = 0;
+            chart.update();
+            sampleCountDisplay.textContent = '0 samples';
+
+            // Show connection prompt
+            bacteriaDisplay.innerHTML = `
+                <div class="connection-prompt">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                    </svg>
+                    <p>Connect to Arduino to begin monitoring</p>
+                </div>
+            `;
+        }
+
+        // Read data from serial port
+        async function readData() {
+            isReading = true;
+            const textDecoder = new TextDecoderStream();
+            const readableStreamClosed = port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+
+            let buffer = '';
+
+            try {
+                while (isReading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+
+                    buffer += value;
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // Keep incomplete line in buffer
+
+                    for (const line of lines) {
+                        const trimmed = line.trim();
+                        if (trimmed) {
+                            processData(trimmed);
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error reading data:', error);
+            }
+        }
+
+        // Process incoming data
+        function processData(data) {
+            const value = parseFloat(data);
+            
+            if (!isNaN(value)) {
+                sampleCount++;
+                
+                // Add to chart
+                const timestamp = new Date().toLocaleTimeString();
+                dataPoints.push(value);
+                timeLabels.push(timestamp);
+
+                // Keep only last N points
+                if (dataPoints.length > maxDataPoints) {
+                    dataPoints.shift();
+                    timeLabels.shift();
+                }
+
+                chart.update('none'); // Update without animation for smoother real-time updates
+
+                // Update sample count
+                sampleCountDisplay.textContent = `${sampleCount} samples`;
+
+                // Update bacteria estimate
+                updateBacteriaEstimate(value);
+            }
+        }
+
+        // Update bacteria display (initial)
+        function updateBacteriaDisplay() {
+            bacteriaDisplay.innerHTML = `
+                <div class="reading-card">
+                    <div class="reading-label">Current Reading</div>
+                    <div class="reading-value" id="currentValue">
+                        <span class="reading-unit">---</span>
+                    </div>
+                    <div class="bacteria-level">
+                        <div class="level-indicator">
+                            <span class="level-label">Estimated Bacteria Level</span>
+                            <span class="level-value" id="levelText">---</span>
+                        </div>
+                        <div class="level-bar">
+                            <div class="level-bar-fill" id="levelBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-label">Minimum</div>
+                        <div class="stat-value" id="minValue">---</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Maximum</div>
+                        <div class="stat-value" id="maxValue">---</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Average</div>
+                        <div class="stat-value" id="avgValue">---</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Current</div>
+                        <div class="stat-value" id="currentStat">---</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Update bacteria estimate based on value
+        function updateBacteriaEstimate(value) {
+            // Update current reading
+            const currentValueEl = document.getElementById('currentValue');
+            if (currentValueEl) {
+                currentValueEl.innerHTML = `${value.toFixed(0)}<span class="reading-unit"> units</span>`;
+            }
+
+            // Calculate bacteria level (example logic - adjust based on your calibration)
+            // Lower light reflection = higher bacteria presence
+            // Assuming range 0-1023 for Arduino analog read
+            const maxReading = 1023;
+            const bacteriaPercentage = ((maxReading - value) / maxReading) * 100;
+            const clampedPercentage = Math.max(0, Math.min(100, bacteriaPercentage));
+
+            // Determine level
+            let levelText = 'Low';
+            let levelClass = '';
+            if (clampedPercentage > 66) {
+                levelText = 'High';
+                levelClass = 'high';
+            } else if (clampedPercentage > 33) {
+                levelText = 'Medium';
+                levelClass = 'medium';
+            }
+
+            // Update UI
+            const levelTextEl = document.getElementById('levelText');
+            const levelBarEl = document.getElementById('levelBar');
+            
+            if (levelTextEl) {
+                levelTextEl.textContent = levelText;
+            }
+            
+            if (levelBarEl) {
+                levelBarEl.style.width = clampedPercentage + '%';
+                levelBarEl.className = 'level-bar-fill ' + levelClass;
+            }
+
+            // Update stats
+            if (dataPoints.length > 0) {
+                const min = Math.min(...dataPoints);
+                const max = Math.max(...dataPoints);
+                const avg = dataPoints.reduce((a, b) => a + b, 0) / dataPoints.length;
+
+                const minValueEl = document.getElementById('minValue');
+                const maxValueEl = document.getElementById('maxValue');
+                const avgValueEl = document.getElementById('avgValue');
+                const currentStatEl = document.getElementById('currentStat');
+
+                if (minValueEl) minValueEl.textContent = min.toFixed(0);
+                if (maxValueEl) maxValueEl.textContent = max.toFixed(0);
+                if (avgValueEl) avgValueEl.textContent = avg.toFixed(0);
+                if (currentStatEl) currentStatEl.textContent = value.toFixed(0);
+            }
+        }
+
+        // Handle page close/reload
+        window.addEventListener('beforeunload', async () => {
+            if (port) {
+                await disconnect();
+            }
+        });
+    </script>
+</body>
+</html>
